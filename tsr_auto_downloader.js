@@ -158,7 +158,7 @@ const category_downloader = class {
                                     Promise.all(this.dl_children($, detailChildren));
                                 }
                                 this.next_page(detailChildren.length <= 21);
-                                this.download();
+                                this.download().then(() => { resolve(true); });
                             });
                         });
                     });
