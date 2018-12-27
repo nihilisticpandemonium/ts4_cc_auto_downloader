@@ -7,8 +7,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "./tsr_auto_downloader.js"
   },
-  "author": "",
-  "license": "ARR",
+  "author": "Michael Tindal (whiro@tukui.org)",
+  "license": "UNLICENSED",
+  "private": "true",
   "dependencies": {
     "axios": "^0.18.0",
     "cheerio": "^1.0.0-rc.2",
