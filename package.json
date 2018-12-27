@@ -1,0 +1,20 @@
+{
+  "name": "tsr_auto_downloader",
+  "version": "1.0.0",
+  "description": "The Sims Resource auto downloader",
+  "main": "tsr_auto_downloader.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "./tsr_auto_downloader.js"
+  },
+  "author": "",
+  "license": "ARR",
+  "dependencies": {
+    "axios": "^0.18.0",
+    "cheerio": "^1.0.0-rc.2",
+    "leveldown": "^4.0.1",
+    "levelup": "^3.1.1",
+    "moment": "^2.22.2",
+    "phantom": "^6.0.3"
+  }
+}
