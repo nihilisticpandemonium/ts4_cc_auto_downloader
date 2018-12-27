@@ -56,7 +56,7 @@ if (!String.prototype.replaceLast) {
 }
 
 var screen = blessed.screen({
-    smartCSR: true
+    smartCSR: true,
 });
 
 screen.title = 'TSR Auto Downloader';
@@ -214,6 +214,16 @@ function updateCurrentlyDownloadingList() {
     screen.render();
 }
 
+async function flushScreenAtInterval() {
+    setInterval(() => { 
+        process.stdout.write('\x1B[2J\x1B[0f\u001b[0;0H'); 
+        screen.realloc();
+        screen.render();
+    }, 30000)
+}
+
+flushScreenAtInterval();
+
 /* Basic flow:
    Category downloader:
       State:  currentDate, currentPageNumber
@@ -280,7 +290,16 @@ const category_downloader = class {
         children.each((child) => {
             var data_href = children[child].attribs['data-href'];
             var cdl = new detail_downloader(this.category, data_href);
-            childPromises.push(cdl.download());
+            const downloadChild = (cdl) => {
+                return new Promise(resolve => {
+                    const delay = 500;
+                    const f = () => {
+                        cdl.download().then(() => { resolve(true); }).catch((err) => { setTimeout(f, delay); });
+                    }
+                    f();
+                })
+            }
+            childPromises.push(downloadChild(cdl));
         });
         return childPromises;
     }
@@ -354,6 +373,7 @@ const detail_downloader = class {
         this.category = category
         this.url = "https://thesimsresource.com" + attr;
         this.downloaded = false;
+        this.ack = false;
     }
     download() {
         var _waitingForDelete = false;
@@ -382,7 +402,8 @@ const detail_downloader = class {
             dldb.get(this.itemID).then((value) => {
                 return new Promise(resolve => { resolve(true); });
             }).catch((err) => {
-                return new Promise(resolve => {
+                return new Promise((resolve, reject) => {
+                    setTimeout(() => { reject(false); }, 30000);
                     var _ph, _page;
                     phantom.create().then((ph) => {
                         _ph = ph;
@@ -428,7 +449,12 @@ const detail_downloader = class {
                                     const delay = 500;
                                     const f = () => {
                                         if (url !== null) {
-                                            resolve(url);
+                                            var page_close_promise = _page.close();
+                                            page_close_promise.then(() => {
+                                                _ph.exit();
+                                                delete openPhantomInstances[this.itemID];
+                                                resolve(url);
+                                            });
                                         } else {
                                             setTimeout(f, delay);
                                         }
@@ -440,11 +466,7 @@ const detail_downloader = class {
                                 function grabFilenameFromResponse(headers) {
                                     return headers.match("filename=\"(.+)\"")[1];
                                 }
-                                var page_close_promise = _page.close();
-                                page_close_promise.then(() => {
-                                    _ph.exit();
-                                    delete openPhantomInstances[this.itemID];
-                                });
+                                
                                 axios.get(url).then((response) => {
                                     var file_name = grabFilenameFromResponse(response.headers['content-disposition']).replace(/[^a-z0-9]/gi, '_').toLowerCase().replaceLast("_package", ".package").replaceLast("_zip", ".zip");
                                     var path = "/home/whiro/s4s/" + category_type[this.category] + '/';
