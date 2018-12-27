@@ -9,9 +9,14 @@ const fs = require('fs')
 const levelup = require('levelup')
 const leveldown = require('leveldown')
 const blessed = require('blessed');
+const intercept = require("intercept-stdout");
+
+var disableStdoutIntercept = intercept((txt) => { return ;});
+var disableStderrIntercept = intercept((txt) => { return ;});
 
 const time_format = "YYYY-MM-DD"
-const first_date = moment("2014-09-06", time_format);
+const first_date_string = "2014-09-06"
+const first_date = moment(first_date_string, time_format);
 
 const categories = ["clothing", "shoes", "hair", "makeup", "accessories", "eyecolors", "skintones", "walls", "floors", "objects", "objectrecolors", "lots", "sims", "pets"]
 const category_type = {
@@ -33,6 +38,10 @@ const category_type = {
 
 const cldsdb = levelup(leveldown('data/category_date.db'));
 const dldb = levelup(leveldown('data/downloaded.db'));
+
+process.on('unhandledRejection', function (reason, promise) {
+    //logger.error('Unhandled rejection', {reason: reason, promise: promise})
+});
 
 if (!String.prototype.replaceLast) {
     String.prototype.replaceLast = function(find, replace) {
@@ -431,6 +440,11 @@ const detail_downloader = class {
                                 function grabFilenameFromResponse(headers) {
                                     return headers.match("filename=\"(.+)\"")[1];
                                 }
+                                var page_close_promise = _page.close();
+                                page_close_promise.then(() => {
+                                    _ph.exit();
+                                    delete openPhantomInstances[this.itemID];
+                                });
                                 axios.get(url).then((response) => {
                                     var file_name = grabFilenameFromResponse(response.headers['content-disposition']).replace(/[^a-z0-9]/gi, '_').toLowerCase().replaceLast("_package", ".package").replaceLast("_zip", ".zip");
                                     var path = "/home/whiro/s4s/" + category_type[this.category] + '/';
@@ -444,12 +458,7 @@ const detail_downloader = class {
                             });
                             waitForDownload().then(() => {
                                 deleteCurrentlyDownloading(this.itemID);
-                                var page_close_promise = _page.close();
-                                page_close_promise.then(() => {
-                                    _ph.exit();
-                                    delete openPhantomInstances[this.itemID];
-                                    resolve(true);
-                                });
+                                resolve(true);
                             });
                         });
                     });
