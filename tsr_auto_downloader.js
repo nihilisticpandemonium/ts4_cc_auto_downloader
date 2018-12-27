@@ -12,7 +12,7 @@ var leveldown = require('leveldown')
 var time_format = "YYYY-MM-DD"
 var first_date = moment("2014-09-06", time_format)
 
-var categories = ["clothing", "shoes", "hair", "makeup", "accessories", "eyecolors", "skintones", "walls", "floors", "objects", "objectrecolors"]
+var categories = ["clothing", "shoes", "hair", "makeup", "accessories", "eyecolors", "skintones", "walls", "floors", "objects", "objectrecolors", "lots", "sims", "pets"]
 var category_type = {
     "clothing": "CAS",
     "shoes": "CAS",
@@ -24,7 +24,10 @@ var category_type = {
     "walls": "BB",
     "floors": "BB",
     "objects": "BB",
-    "objectrecolors": "BB"
+    "objectrecolors": "BB",
+    "lots": "Tray",
+    "sims": "Tray",
+    "pets": "Tray"
 }
 
 var cldsdb = levelup(leveldown('data/category_date.db'));
@@ -57,6 +60,7 @@ const category_downloader = class {
         this.category = category
         this.base_url = "http://thesimsresource.com/downloads/browse/category/sims4-" + category
         this.page = 1;
+        this.date = undefined;
         cldsdb.get(this.category).then((value) => {
             this.date = moment(value, time_format);
         }).catch((err) => {
@@ -66,19 +70,31 @@ const category_downloader = class {
             return new Promise(resolve => {
                 const delay = 500;
                 const f = () => {
-                   if (typeof(this.date) !== 'undefined') {
-                    resolve(true);
-                   } else {
-                    setTimeout(f, delay);
-                   }
+                    if (typeof(this.date) !== 'undefined') {
+                        resolve(true);
+                    } else {
+                        setTimeout(f, delay);
+                    }
                 }
                 f();
             });
         }
-        waitForDate().then((value) => { return ;});
+        waitForDate().then((value) => {
+            return;
+        });
     }
     make_url() {
-        return this.base_url + "/released/" + this.date.format(time_format) + "/page/" + this.page + "/skipsetitems/1";
+        return new Promise(resolve => {
+            const delay = 500;
+            const f = () => {
+                if (typeof this.date !== 'undefined') {
+                    resolve(this.base_url + "/released/" + this.date.format(time_format) + "/page/" + this.page + "/skipsetitems/1");
+                } else {
+                    setTimeout(f, delay);
+                }
+            }
+            f();
+        });
     }
     next_page(incDate) {
         if (incDate) {
@@ -103,43 +119,50 @@ const category_downloader = class {
     }
     download() {
         return new Promise(resolve => {
-            var _ph, _page;
-            phantom.create().then((ph) => {
-                _ph = ph;
-                return ph.createPage();
-            }).then((page) => {
-                _page = page;
-                return _page.open(this.make_url());
-            }).then((status) => {
-                _page.property('content').then((content) => {
-                    _page.on('onError', function(msg, trace) {
-                        var msgStack = ['ERROR: ' + msg];
-                        if (trace && trace.length) {
-                            msgStack.push('TRACE:');
-                            trace.forEach(function(t) {
-                                msgStack.push(' -> ' + t.file + ': ' + t.line + (t.function ? ' (in function "' + t.function+'")' : ''));
+            this.make_url().then((url) => {
+                var now = moment();
+                if (this.date.isAfter(now)) {
+                    resolve(true);
+                } else {
+                    var _ph, _page;
+                    phantom.create().then((ph) => {
+                        _ph = ph;
+                        return ph.createPage();
+                    }).then((page) => {
+                        _page = page;
+                        return _page.open(url);
+                    }).then((status) => {
+                        _page.property('content').then((content) => {
+                            _page.on('onError', function(msg, trace) {
+                                var msgStack = ['ERROR: ' + msg];
+                                if (trace && trace.length) {
+                                    msgStack.push('TRACE:');
+                                    trace.forEach(function(t) {
+                                        msgStack.push(' -> ' + t.file + ': ' + t.line + (t.function ? ' (in function "' + t.function+'")' : ''));
+                                    });
+                                }
+                                // uncomment to log into the console 
+                                // console.error(msgStack.join('\n'));
                             });
-                        }
-                        // uncomment to log into the console 
-                        // console.error(msgStack.join('\n'));
+                            _page.evaluate(function() {
+                                return document.body.innerHTML;
+                            }).then((html) => {
+                                const $ = cheerio.load(html);
+                                var detailChildren = $('a[data-href]');
+                                var page_close_promise = _page.close();
+                                page_close_promise.then(() => {
+                                    _ph.exit();
+                                })
+                                var now = moment();
+                                if (detailChildren.length > 0) {
+                                    Promise.all(this.dl_children($, detailChildren));
+                                }
+                                this.next_page(detailChildren.length <= 21);
+                                this.download();
+                            });
+                        });
                     });
-                    _page.evaluate(function() {
-                        return document.body.innerHTML;
-                    }).then((html) => {
-                        const $ = cheerio.load(html);
-                        var detailChildren = $('a[data-href]');
-                        var page_close_promise = _page.close();
-                        page_close_promise.then(() => {
-                            _ph.exit();
-                        })
-                        var now = moment();
-                        if (detailChildren.length > 0) {
-                            Promise.all(this.dl_children($, detailChildren));
-                        }
-                        this.next_page(detailChildren.length <= 21);
-                        this.download(); 
-                    });
-                });
+                };
             });
         });
     }
@@ -155,7 +178,9 @@ const detail_downloader = class {
         this.downloaded = false;
     }
     download() {
-        dldb.get(this.itemID).then((value) => { return; }).catch((err) => {
+        dldb.get(this.itemID).then((value) => {
+            return;
+        }).catch((err) => {
             console.log("Downloading " + this.itemID + "...");
             return new Promise(resolve => {
                 var _ph, _page;
