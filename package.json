@@ -12,6 +12,7 @@
   "private": "true",
   "dependencies": {
     "axios": "^0.18.0",
+    "blessed": "^0.1.81",
     "cheerio": "^1.0.0-rc.2",
     "leveldown": "^4.0.1",
     "levelup": "^3.1.1",
