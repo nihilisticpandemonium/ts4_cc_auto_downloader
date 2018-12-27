@@ -1,19 +1,18 @@
 #!/usr/bin/env node
 
 // TSR Auto Downloader by whiro, run from command-line
-var moment = require('moment')
-var phantom = require('phantom')
-var axios = require('axios')
-var cheerio = require('cheerio')
-var fs = require('fs')
-var levelup = require('levelup')
-var leveldown = require('leveldown')
+const moment = require('moment')
+const phantom = require('phantom')
+const axios = require('axios')
+const cheerio = require('cheerio')
+const fs = require('fs')
+const levelup = require('levelup')
+const leveldown = require('leveldown')
 
-var time_format = "YYYY-MM-DD"
-var first_date = moment("2014-09-06", time_format)
+const time_format = "YYYY-MM-DD"
 
-var categories = ["clothing", "shoes", "hair", "makeup", "accessories", "eyecolors", "skintones", "walls", "floors", "objects", "objectrecolors", "lots", "sims", "pets"]
-var category_type = {
+const categories = ["clothing", "shoes", "hair", "makeup", "accessories", "eyecolors", "skintones", "walls", "floors", "objects", "objectrecolors", "lots", "sims", "pets"]
+const category_type = {
     "clothing": "CAS",
     "shoes": "CAS",
     "hair": "CAS",
@@ -30,8 +29,8 @@ var category_type = {
     "pets": "Tray"
 }
 
-var cldsdb = levelup(leveldown('data/category_date.db'));
-var dldb = levelup(leveldown('data/downloaded.db'));
+const cldsdb = levelup(leveldown('data/category_date.db'));
+const dldb = levelup(leveldown('data/downloaded.db'));
 
 if (!String.prototype.replaceLast) {
     String.prototype.replaceLast = function(find, replace) {
@@ -130,20 +129,10 @@ const category_downloader = class {
                         return ph.createPage();
                     }).then((page) => {
                         _page = page;
+                        page.on('onError', function() { return ;});
                         return _page.open(url);
                     }).then((status) => {
                         _page.property('content').then((content) => {
-                            _page.on('onError', function(msg, trace) {
-                                var msgStack = ['ERROR: ' + msg];
-                                if (trace && trace.length) {
-                                    msgStack.push('TRACE:');
-                                    trace.forEach(function(t) {
-                                        msgStack.push(' -> ' + t.file + ': ' + t.line + (t.function ? ' (in function "' + t.function+'")' : ''));
-                                    });
-                                }
-                                // uncomment to log into the console 
-                                // console.error(msgStack.join('\n'));
-                            });
                             _page.evaluate(function() {
                                 return document.body.innerHTML;
                             }).then((html) => {
@@ -189,6 +178,7 @@ const detail_downloader = class {
                     return ph.createPage();
                 }).then((page) => {
                     _page = page;
+                    page.on('onError', function() { return ;});
                     return _page.open(this.url);
                 }).then((status) => {
                     const waitForDownload = () => {
@@ -211,17 +201,6 @@ const detail_downloader = class {
                             if (msg.match('http://d27wosp86lso6u.cloudfront.net/downloads') !== null) {
                                 url = msg;
                             }
-                        });
-                        _page.on('onError', function(msg, trace) {
-                            var msgStack = ['ERROR: ' + msg];
-                            if (trace && trace.length) {
-                                msgStack.push('TRACE:');
-                                trace.forEach(function(t) {
-                                    msgStack.push(' -> ' + t.file + ': ' + t.line + (t.function ? ' (in function "' + t.function+'")' : ''));
-                                });
-                            }
-                            // uncomment to log into the console 
-                            // console.error(msgStack.join('\n'));
                         });
                         _page.evaluate(function(itemID) {
                             var urlOut = null;
