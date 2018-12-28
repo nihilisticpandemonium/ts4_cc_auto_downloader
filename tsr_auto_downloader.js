@@ -9,10 +9,16 @@ const fs = require('fs')
 const levelup = require('levelup')
 const leveldown = require('leveldown')
 const blessed = require('blessed');
+const contrib = require('blessed-contrib');
 const intercept = require("intercept-stdout");
+const si = require("systeminformation");
 
-var disableStdoutIntercept = intercept((txt) => { return ;});
-var disableStderrIntercept = intercept((txt) => { return ;});
+var disableStdoutIntercept = intercept((txt) => {
+    return;
+});
+var disableStderrIntercept = intercept((txt) => {
+    return;
+});
 
 const time_format = "YYYY-MM-DD"
 const first_date_string = "2014-09-06"
@@ -37,9 +43,8 @@ const category_type = {
 }
 
 const cldsdb = levelup(leveldown('data/category_date.db'));
-const dldb = levelup(leveldown('data/downloaded.db'));
 
-process.on('unhandledRejection', function (reason, promise) {
+process.on('unhandledRejection', function(reason, promise) {
     //logger.error('Unhandled rejection', {reason: reason, promise: promise})
 });
 
@@ -64,7 +69,9 @@ screen.title = 'TSR Auto Downloader';
 var openPhantomInstances = {};
 
 screen.key(['escape', 'q', 'C-c'], (ch, key) => {
-    Object.keys(openPhantomInstances).forEach((k) => { openPhantomInstances[k].exit(); });
+    Object.keys(openPhantomInstances).forEach((k) => {
+        openPhantomInstances[k].exit();
+    });
     return process.exit(0);
 });
 
@@ -88,11 +95,12 @@ var displayForm = blessed.form({
 screen.append(displayForm);
 var categoryDates = blessed.list({
     parent: displayForm,
-    top: '15%',
-    left: '10%',
-    width: '35%',
-    height: '70%',
+    top: '5%',
+    left: '5%',
+    width: '40%',
+    height: '45%',
     interactive: 'false',
+    label: 'Category Current Dates',
     border: {
         type: 'line'
     },
@@ -115,25 +123,14 @@ var categoryDates = blessed.list({
 
 screen.append(categoryDates);
 
-var categoryDateLabel = blessed.text({
-    parent: displayForm,
-    top: '5%',
-    left: '10%',
-    width: '35%',
-    height: '10%',
-})
-
-categoryDateLabel.setText("Category Dates");
-
-screen.append(categoryDateLabel);
-
 var currentlyDownloading = blessed.list({
     parent: displayForm,
-    top: '15%',
+    top: '5%',
     left: '50%',
-    width: '35%',
+    width: '40%',
     height: '70%',
     interactive: 'false',
+    label: 'Currently Downloading',
     border: {
         type: 'line'
     },
@@ -156,34 +153,138 @@ var currentlyDownloading = blessed.list({
 
 screen.append(currentlyDownloading);
 
-var currentlyDownloadingLabel = blessed.text({
-    parent: displayForm,
-    top: '5%',
-    left: '50%',
-    width: '35%',
-    height: '10%',
-})
-
-currentlyDownloadingLabel.setText('Currently Downloading');
-
-screen.append(currentlyDownloadingLabel);
-
 var currentlyDownloadingTbl = {};
 
-var currentlyExecutingText = blessed.text({
-    top: '90%', 
+var log = contrib.log({
+    top: '50%',
     left: '5%',
-    width: '90%',
-    height: '10%',
-    aligh: 'left'
+    width: '40%',
+    height: '45%',
+    aligh: 'left',
+    label: 'Log',
+    border: {
+        type: "line",
+        fg: "cyan"
+    },
+    style: {
+        bg: "blue"
+    },
+});
+
+screen.append(log);
+
+var numberOfDownloadedItems = blessed.text({
+    top: '95%',
+    left: '5%',
+    width: '25%',
+    height: '3%',
+    align: 'left'
 })
 
-screen.append(currentlyExecutingText);
+screen.append(numberOfDownloadedItems);
+
+var numberOfOpenPhamtomJSInstances = blessed.text({
+    top: '95%',
+    left: '75%',
+    width: '25%',
+    height: '3%',
+    align: 'left'
+})
+
+screen.append(numberOfOpenPhamtomJSInstances)
+var spark = contrib.sparkline({
+    label: 'Throughput (bits/sec)',
+    tags: true,
+    top: '75%',
+    left: '50%',
+    height: '20%',
+    width: '15%',
+    style: {
+        fg: 'red',
+        bg: 'black'
+    },
+    border: {
+        type: "line",
+        fg: "magenta"
+    }
+})
+
+screen.append(spark);
+
+const numToTrack = 30;
+var networkRxData = [];
+var networkTxData = [];
+var firstRun = false;
+
+function formatBytes(a, b) {
+    if (0 == a) return "0 Bytes";
+    var c = 1024,
+        d = b || 2,
+        e = ["Bytes", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"],
+        f = Math.floor(Math.log(a) / Math.log(c));
+    return parseFloat((a / Math.pow(c, f)).toFixed(d)) + " " + e[f]
+}
+
+async function updateNetworkStats() {
+    setInterval(() => {
+        si.networkStats().then((data) => {
+            if (!firstRun) {
+                firstRun = true;
+            } else {
+                networkRxData.push(data.rx_sec);
+                networkTxData.push(data.tx_sec);
+                const truncateArray = (ary) => {
+                    while (ary.length > numToTrack) {
+                        ary.shift();
+                    }
+                }
+                truncateArray(networkRxData);
+                truncateArray(networkTxData);
+                var rx_sec_label = 'rx (' + formatBytes(data.rx_sec) + '/sec)';
+                var tx_sec_label = 'tx (' + formatBytes(data.tx_sec) + '/sec)';
+
+                spark.setData([rx_sec_label, tx_sec_label], [networkRxData, networkTxData]);
+                screen.render();
+            }
+        });
+    }, 1000);
+}
+
+updateNetworkStats();
+
+async function updateNumberOfDownloadedItems() {
+    const {
+        exec
+    } = require('child_process');
+    const delay = 2000;
+    const f = () => {
+        exec('ls /home/whiro/s4s/{CAS,BB,Tray/{Lots,Sims,Pets}}/* | wc -l', (err, stdout, stderr) => {
+            if (!err) {
+                numberOfDownloadedItems.setText("Number of items downloaded: " + stdout);
+                screen.render();
+            }
+        });
+    };
+    setInterval(f, delay);
+};
+
+updateNumberOfDownloadedItems();
+
+async function updateNumberOfOpenPhantomJSInstances() {
+    const delay = 500;
+    const f = () => {
+        numberOfOpenPhamtomJSInstances.setText("PhantomJS Instances: " + Object.keys(openPhantomInstances).length);
+        screen.render();
+    };
+    setInterval(f, delay);
+}
+
+updateNumberOfOpenPhantomJSInstances();
 
 screen.render();
 
-function log(text) {
-    currentlyExecutingText.setText(text);
+function appendLog(text) {
+    log.log(text);
     screen.render();
 }
 
@@ -193,7 +294,7 @@ function updateCategoryDates() {
     categoryDates.clearItems();
     const renderCategoryDate = (category) => {
         if (typeof category.date !== 'undefined') {
-            categoryDates.addItem(category.category + ": " + category.date.format(time_format) + " (P: " + category.page + ")");
+            categoryDates.addItem(category.category + ": " + category.date.format(time_format) + " (P: " + category.page + ")" + "[Children remaining: " + category.waitingChildren + "]");
         }
     }
 
@@ -204,7 +305,7 @@ function updateCategoryDates() {
 function updateCurrentlyDownloadingList() {
     currentlyDownloading.clearItems();
     const renderCurrentlyDownloading = (key) => {
-        var text = key + " (" + currentlyDownloadingTbl[key].category + ")";
+        var text = key + " (" + currentlyDownloadingTbl[key].category + ") [" + currentlyDownloadingTbl[key].stage + "]";
         if (typeof currentlyDownloadingTbl[key].fileName !== 'undefined') {
             text += ' => ' + currentlyDownloadingTbl[key].fileName;
         }
@@ -215,14 +316,16 @@ function updateCurrentlyDownloadingList() {
 }
 
 async function flushScreenAtInterval() {
-    setInterval(() => { 
-        process.stdout.write('\x1B[2J\x1B[0f\u001b[0;0H'); 
+    setInterval(() => {
+        process.stdout.write('\x1B[2J\x1B[0f\u001b[0;0H');
         screen.realloc();
         screen.render();
     }, 30000)
 }
 
 flushScreenAtInterval();
+
+const now = moment();
 
 /* Basic flow:
    Category downloader:
@@ -240,6 +343,7 @@ const category_downloader = class {
         this.base_url = "http://thesimsresource.com/downloads/browse/category/sims4-" + category
         this.page = 1;
         this.date = undefined;
+        this.waitingChildren = 0;
         cldsdb.get(this.category).then((value) => {
             this.date = moment(value, time_format);
         }).catch((err) => {
@@ -280,80 +384,106 @@ const category_downloader = class {
             this.date.add(1, 'd')
             this.page = 1
             cldsdb.put(this.category, this.date.format(time_format));
+            appendLog("New date for " + this.category + ": " + this.date.format(time_format));
         } else {
             this.page = this.page + 1;
+            appendLog("New page for " + this.category + ": " + this.page);
         }
         updateCategoryDates();
     }
     dl_children($, children) {
+        if (children === null) {
+            return [new Promise(resovle => {
+                resolve(true);
+            })];
+        }
         var childPromises = [];
+        this.waitingChildren = children.length;
         children.each((child) => {
             var data_href = children[child].attribs['data-href'];
             var cdl = new detail_downloader(this.category, data_href);
             const downloadChild = (cdl) => {
                 return new Promise(resolve => {
-                    const delay = 500;
-                    const f = () => {
-                        cdl.download().then(() => { resolve(true); }).catch((err) => { setTimeout(f, delay); });
-                    }
-                    f();
-                })
+                    cdl.download().then(() => {
+                        this.waitingChildren--;
+                        resolve(true);
+                    })
+                });
             }
-            childPromises.push(downloadChild(cdl));
+            const promiseWhile = (data, condition, action) => {
+                var whilst = (data) => {
+                    return condition(data) ?
+                        action(data).then(whilst) :
+                        Promise.resolve(true);
+                }
+                return whilst(data);
+            };
+            childPromises.push(promiseWhile(cdl, (cdl) => {
+                return !cdl.ack;
+            }, (cdl) => {
+                return downloadChild(cdl);
+            }));
         });
         return childPromises;
     }
-    download() {
+    download_page() {
         return new Promise(resolve => {
             this.make_url().then((url) => {
-                var now = moment();
-                if (this.date.isAfter(now)) {
-                    resolve(true);
-                } else {
-                    var _ph, _page;
-                    phantom.create().then((ph) => {
-                        _ph = ph;
-                        openPhantomInstances[this.category] = ph;
-                        return ph.createPage();
-                    }).then((page) => {
-                        _page = page;
-                        page.on('onError', function() {
-                            return;
-                        });
-                        return _page.open(url);
-                    }).then((status) => {
-                        _page.property('content').then((content) => {
-                            _page.evaluate(function() {
-                                return document.body.innerHTML;
-                            }).then((html) => {
-                                const $ = cheerio.load(html);
-                                var detailChildren = $('a[data-href]');
-                                var page_close_promise = _page.close();
-                                page_close_promise.then(() => {
-                                    _ph.exit();
-                                    delete openPhantomInstances[this.category];
-                                })
-                                var now = moment();
-                                if (detailChildren.length > 0) {
-                                    Promise.all(this.dl_children($, detailChildren));
-                                }
+
+                var _ph, _page;
+                phantom.create().then((ph) => {
+                    _ph = ph;
+                    openPhantomInstances[this.category] = ph;
+                    return ph.createPage();
+                }).then((page) => {
+                    _page = page;
+                    page.on('onError', function() {
+                        return;
+                    });
+                    return _page.open(url);
+                }).then((status) => {
+                    _page.property('content').then((content) => {
+                        _page.evaluate(function() {
+                            return document.body.innerHTML;
+                        }).then((html) => {
+                            const $ = cheerio.load(html);
+                            var detailChildren = $('a[data-href]');
+                            var page_close_promise = _page.close();
+                            page_close_promise.then(() => {
+                                _ph.exit();
+                                delete openPhantomInstances[this.category];
+                            })
+                            Promise.all(this.dl_children($, detailChildren)).then(() => {
                                 this.next_page(detailChildren.length <= 21);
-                                this.download().then(() => {
-                                    resolve(true);
-                                });
+                                resolve(true);
                             });
                         });
                     });
-                };
+                });
             });
         });
     }
+    download() {
+        const promiseWhile = (condition, action) => {
+            var whilst = () => {
+                return condition() ?
+                    this[action]().then(whilst) :
+                    Promise.resolve(true);
+            }
+            return whilst();
+        };
+
+        return promiseWhile(() => {
+            return (typeof this.date === 'undefined') || this.date.isBefore(now);
+        }, "download_page");
+    }
 }
 
-var phantom_instance_pool = [];
-
 function addCurrentlyDownloading(itemID, category) {
-    currentlyDownloadingTbl[itemID] = { category: category };
+    currentlyDownloadingTbl[itemID] = {
+        category: category,
+        stage: "Start"
+    };
     updateCurrentlyDownloadingList();
 }
 
@@ -367,6 +497,11 @@ function setCurrentlyDownloadingFileName(itemID, fileName) {
     updateCurrentlyDownloadingList();
 }
 
+function setCurrentlyDownloadingStage(itemID, stage) {
+    currentlyDownloadingTbl[itemID].stage = stage;
+    updateCurrentlyDownloadingList();
+}
+
 const detail_downloader = class {
     constructor(category, attr) {
         this.itemID = attr.match(".+/id/([0-9]+)/")[1];
@@ -376,113 +511,99 @@ const detail_downloader = class {
         this.ack = false;
     }
     download() {
-        var _waitingForDelete = false;
-        if (this.category == "Lots" || this.category === "Sims" || this.category === "Pets") {
-            _waitingForDelete = true;
-            dldb.del(this.itemID).then(() => {
-                _waitingForDelete = false;
-            }).catch((err) => {
-                _waitingForDelete = false;
-            });
-        }
-        const waitForDelete = () => {
-            return new Promise(resolve => {
-                const delay = 500;
-                const f = () => {
-                    if (!_waitingForDelete) {
-                        resolve(true);
-                    } else {
-                        setTimeout(f, delay);
-                    }
+        return new Promise(resolve => {
+            setTimeout(() => {
+                if (!this.ack) {
+                    resolve(false);
                 }
-                f();
-            });
-        }
-        waitForDelete().then((value) => {
-            dldb.get(this.itemID).then((value) => {
-                return new Promise(resolve => { resolve(true); });
-            }).catch((err) => {
-                return new Promise((resolve, reject) => {
-                    setTimeout(() => { reject(false); }, 30000);
-                    var _ph, _page;
-                    phantom.create().then((ph) => {
-                        _ph = ph;
-                        openPhantomInstances[this.itemID] = ph;
-                        return ph.createPage();
-                    }).then((page) => {
-                        _page = page;
-                        page.on('onError', function() {
-                            return;
+            }, 60000);
+            var _ph, _page;
+            addCurrentlyDownloading(this.itemID, this.category);
+            setCurrentlyDownloadingStage(this.itemID, "PhantomJS");
+            phantom.create().then((ph) => {
+                _ph = ph;
+                openPhantomInstances[this.itemID] = ph;
+                return ph.createPage();
+            }).then((page) => {
+                setCurrentlyDownloadingStage(this.itemID, "Page Open");
+                this.stage = "Open Page"
+                _page = page;
+                page.on('onError', function() {
+                    return;
+                });
+                return _page.open(this.url);
+            }).then((status) => {
+                setCurrentlyDownloadingStage(this.itemID, "Checking");
+                const waitForDownload = () => {
+                    return new Promise(resolve => {
+                        const delay = 500;
+                        const f = () => {
+                            if (this.downloaded === true) {
+                                resolve(true);
+                            } else {
+                                setTimeout(f, delay);
+                            }
+                        };
+                        f();
+                    });
+                }
+
+                _page.property('content').then((content) => {
+                    var url = null;
+                    _page.on('onConsoleMessage', function(msg) {
+                        if (msg.match('http://d27wosp86lso6u.cloudfront.net/downloads') !== null) {
+                            url = msg;
+                        }
+                    });
+                    _page.evaluate(function(itemID) {
+                        var urlOut = null;
+                        _dl(itemID, null, function(url, data) {
+                            console.log(url);
                         });
-                        return _page.open(this.url);
-                    }).then((status) => {
-                        addCurrentlyDownloading(this.itemID, this.category);
-                        const waitForDownload = () => {
-                            return new Promise(resolve => {
-                                const delay = 500;
-                                const f = () => {
-                                    if (this.downloaded === true) {
-                                        resolve(true);
-                                    } else {
-                                        setTimeout(f, delay);
-                                    }
-                                };
-                                f();
-                            });
+                    }, this.itemID);
+                    const get_url = () => {
+                        return new Promise(resolve => {
+                            const delay = 500;
+                            const f = () => {
+                                if (url !== null) {
+                                    var page_close_promise = _page.close();
+                                    page_close_promise.then(() => {
+                                        _ph.exit();
+                                        delete openPhantomInstances[this.itemID];
+                                        resolve(url);
+                                    });
+                                } else {
+                                    setTimeout(f, delay);
+                                }
+                            }
+                            f();
+                        });
+                    }
+                    var saving = false;
+                    get_url().then((url) => {
+                        function grabFilenameFromResponse(headers) {
+                            return headers.match("filename=\"(.+)\"")[1];
                         }
 
-                        _page.property('content').then((content) => {
-                            var url = null;
-                            _page.on('onConsoleMessage', function(msg) {
-                                if (msg.match('http://d27wosp86lso6u.cloudfront.net/downloads') !== null) {
-                                    url = msg;
-                                }
-                            });
-                            _page.evaluate(function(itemID) {
-                                var urlOut = null;
-                                _dl(itemID, null, function(url, data) {
-                                    console.log(url);
-                                });
-                            }, this.itemID);
-                            const get_url = () => {
-                                return new Promise(resolve => {
-                                    const delay = 500;
-                                    const f = () => {
-                                        if (url !== null) {
-                                            var page_close_promise = _page.close();
-                                            page_close_promise.then(() => {
-                                                _ph.exit();
-                                                delete openPhantomInstances[this.itemID];
-                                                resolve(url);
-                                            });
-                                        } else {
-                                            setTimeout(f, delay);
-                                        }
-                                    }
-                                    f();
-                                });
+                        axios.get(url).then((response) => {
+                            var file_name = grabFilenameFromResponse(response.headers['content-disposition']).replace(/[^a-z0-9]/gi, '_').toLowerCase().replaceLast("_package", ".package").replaceLast("_zip", ".zip");
+                            var path = "/home/whiro/s4s/" + category_type[this.category] + '/';
+                            if (!fs.existsSync(path + file_name)) {
+                                saving = true;
+                                setCurrentlyDownloadingStage(this.itemID, "Saving");
+                                setCurrentlyDownloadingFileName(this.itemID, path + file_name);
+                                fs.writeFileSync(path + file_name, response.data);
                             }
-                            get_url().then((url) => {
-                                function grabFilenameFromResponse(headers) {
-                                    return headers.match("filename=\"(.+)\"")[1];
-                                }
-                                
-                                axios.get(url).then((response) => {
-                                    var file_name = grabFilenameFromResponse(response.headers['content-disposition']).replace(/[^a-z0-9]/gi, '_').toLowerCase().replaceLast("_package", ".package").replaceLast("_zip", ".zip");
-                                    var path = "/home/whiro/s4s/" + category_type[this.category] + '/';
-                                    if (!fs.existsSync(path + file_name)) {
-                                        setCurrentlyDownloadingFileName(this.itemID, file_name);
-                                        fs.writeFileSync(path + file_name, response.data);
-                                        dldb.put(this.itemID, true);
-                                    }
-                                    this.downloaded = true;
-                                });
-                            });
-                            waitForDownload().then(() => {
-                                deleteCurrentlyDownloading(this.itemID);
-                                resolve(true);
-                            });
+                            this.downloaded = true;
                         });
+                    });
+                    waitForDownload().then(() => {
+                        setCurrentlyDownloadingStage(this.itemID, saving ? "Finished" : "Skipped");
+                        setTimeout(() => {
+                            deleteCurrentlyDownloading(this.itemID);
+                        }, 5000);
+                        this.ack = true;
+                        resolve(true);
                     });
                 });
             });
@@ -493,12 +614,12 @@ const detail_downloader = class {
 var c_dl = [];
 
 categories.forEach((category) => {
-    log("Opening " + category + " for downloading.")
+    appendLog("Opening " + category + " for downloading.")
     var c = new category_downloader(category);
     category_downloaders.push(c);
     c_dl.push(c.download());
 });
 
 Promise.all(c_dl).then(() => {
-    log("Finished downloading everything.");
+    appendLog("Finished downloading everything.");
 });
