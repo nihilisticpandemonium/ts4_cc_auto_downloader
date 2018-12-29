@@ -108,7 +108,7 @@ var displayForm = blessed.form({
     },
     style: {
         fg: 'white',
-        bg: 'black',
+        bg: 'grey',
         border: {
             fg: '#f0f0f0'
         },
@@ -116,7 +116,8 @@ var displayForm = blessed.form({
 });
 
 screen.append(displayForm);
-var categoryDates = blessed.list({
+
+var categoryInfoPanel = blessed.list({
     parent: displayForm,
     top: '5%',
     left: '5%',
@@ -144,7 +145,7 @@ var categoryDates = blessed.list({
     },
 });
 
-screen.append(categoryDates);
+screen.append(categoryInfoPanel);
 
 var currentlyDownloadingTbl = {};
 
@@ -401,7 +402,7 @@ async function updateNumberOfDownloadedItems() {
         })
         var waitForAllTotals = async () => {
             const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-            if (typeof (cas) !== 'undefined' && typeof (bb) !== 'undefined' && typeof (lots) !== 'undefined' && typeof (sims) !== 'undefined' && typeof (pets) !== 'undefined') {
+            if (typeof(cas) !== 'undefined' && typeof(bb) !== 'undefined' && typeof(lots) !== 'undefined' && typeof(sims) !== 'undefined' && typeof(pets) !== 'undefined') {
                 return cas + bb + lots + sims + pets;
             } else {
                 await delay(500);
@@ -443,19 +444,19 @@ function appendLog(text) {
 
 var category_downloaders = [];
 
-function updateCategoryDates() {
-    categoryDates.clearItems();
-    const renderCategoryDate = (category) => {
+function updateCategoryInfoPanel() {
+    categoryInfoPanel.clearItems();
+    const renderCategoryInfoPanel = (category) => {
         if (typeof category.date !== 'undefined') {
             var text = category.category + ": " + category.date.format(time_format) + " (P: " + category.page + ")";
-            if (typeof (category.waitingChildren) !== 'undefined') {
+            if (typeof(category.waitingChildren) !== 'undefined') {
                 text += ' [Children: ' + category.waitingChildren + ']';
             }
-            categoryDates.addItem(text);
+            categoryInfoPanel.addItem(text);
         }
     }
 
-    category_downloaders.forEach(renderCategoryDate);
+    category_downloaders.forEach(renderCategoryInfoPanel);
     screen.render();
 }
 
@@ -503,7 +504,7 @@ const category_downloader = class {
             return new Promise(resolve => {
                 const delay = 500;
                 const f = () => {
-                    if (typeof (this.date) !== 'undefined') {
+                    if (typeof(this.date) !== 'undefined') {
                         resolve(true);
                     } else {
                         setTimeout(f, delay);
@@ -521,7 +522,7 @@ const category_downloader = class {
             const delay = 500;
             const f = () => {
                 if (typeof this.date !== 'undefined') {
-                    updateCategoryDates();
+                    updateCategoryInfoPanel();
                     resolve(this.base_url + "/released/" + this.date.format(time_format) + "/page/" + this.page + "/skipsetitems/1");
                 } else {
                     setTimeout(f, delay);
@@ -539,31 +540,17 @@ const category_downloader = class {
             this.page = this.page + 1;
         }
         appendLog("Moving " + this.category + " to next page.");
-        updateCategoryDates();
+        updateCategoryInfoPanel();
     }
     dl_children($, children) {
         var childPromises = [];
         this.waitingChildren = children.length;
+        updateCategoryInfoPanel();
         children.each((child) => {
             var data_href = children[child].attribs['data-href'];
-            var cdl = new detail_downloader(this.category, data_href);
+            var cdl = new detail_downloader(this, data_href);
             appendLog("Downloading " + cdl.itemID + "...");
-            const downloadChild = (cdl) => {
-                const dlch = async () => {
-                    var res = await cdl.download();
-                    appendLog("DL Result: " + cdl.itemID + ": " + res);
-                    if (res) {
-                        this.waitingChildren--;
-                        updateCategoryDates();
-                        return true;
-                    } else {
-                        setCurrentlyDownloadingStage(cdl.itemID, "Stalled");
-                        return dlch();
-                    }
-                }
-                return dlch();
-            }
-            childPromises.push(downloadChild(cdl));
+            childPromises.push(cdl.download());
         });
         return childPromises;
     }
@@ -572,7 +559,7 @@ const category_downloader = class {
             const ready = new Promise(resolve => {
                 pool.use(async (instance) => {
                     var url = await this.make_url();
-                    updateCategoryDates();
+                    updateCategoryInfoPanel();
                     var page = await instance.createPage();
                     await page.on('onError', function () {
                         return;
@@ -625,22 +612,20 @@ const category_downloader = class {
 const dl_url = 'http://d27wosp86lso6u.cloudfront.net/downloads';
 
 const detail_downloader = class {
-    constructor(category, attr) {
+    constructor(owner, attr) {
         this.itemID = attr.match(".+/id/([0-9]+)/")[1];
-        this.category = category
+        this.owner = owner
         this.url = "https://thesimsresource.com" + attr;
         this.downloaded = false;
     }
     download() {
         return new Promise(resolve => {
-            addCurrentlyDownloading(this.itemID, this.category);
+            addCurrentlyDownloading(this.itemID, this.owner.category);
             setCurrentlyDownloadingStage(this.itemID, "Init");
             const downloaded = () => {
-                return new Promise(resolve => {
+                return new Promise((resolve, reject) => {
+                    setTimeout(reject, 45000);
                     pool.use(async (instance) => {
-                        var killTimeout = setTimeout(() => {
-                            resolve(false);
-                        }, 45000);
                         var page = await instance.createPage();
                         setCurrentlyDownloadingStage(this.itemID, "Open TSR Page");
                         await page.on('onError', function () {
@@ -676,20 +661,15 @@ const detail_downloader = class {
                         }, this.itemID);
                         setCurrentlyDownloadingStage(this.itemID, "Get DL URL");
                         var url = await get_url();
-                        clearTimeout(killTimeout);
                         return url;
                     }).then((url) => {
                         var saved = false;
-                        var killTimeout = setTimeout(() => {
-                            resolve(false);
-                        }, 45000);
                         axios.get(url).then((response) => {
-                            clearTimeout(killTimeout);
                             const grabFilenameFromResponse = (headers) => {
                                 return headers.match("filename=\"(.+)\"")[1];
                             }
                             var file_name = grabFilenameFromResponse(response.headers['content-disposition']).replace(/[^a-z0-9]/gi, '_').toLowerCase().replaceLast("_package", ".package").replaceLast("_zip", ".zip");
-                            var path = "/home/whiro/s4s/" + category_type[this.category] + '/';
+                            var path = "/home/whiro/s4s/" + category_type[this.owner.category] + '/';
                             setCurrentlyDownloadingStage(this.itemID, "Checking");
                             if (!fs.existsSync(path + file_name)) {
                                 setCurrentlyDownloadingStage(this.itemID, "Saving");
@@ -707,7 +687,21 @@ const detail_downloader = class {
                     });
                 });
             };
-            downloaded().then(resolve);
+            const dl = async () => {
+                try {
+                    await downloaded();
+                    this.owner.waitingChildren--;
+                    updateCategoryInfoPanel();
+                    resolve(true);
+                } catch (err) {
+                    const delay = (ms) => {
+                        return new Promise(resolve => setTimeout(resolve, ms));
+                    };
+                    await delay(500);
+                    dl();
+                }
+            }
+            dl();
         });
     }
 }
