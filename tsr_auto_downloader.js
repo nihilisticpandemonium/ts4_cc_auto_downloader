@@ -12,6 +12,10 @@ const blessed = require('blessed');
 const contrib = require('blessed-contrib');
 const intercept = require("intercept-stdout");
 const si = require("systeminformation");
+const {
+    exec
+} = require("child_process");
+
 
 var disableStdoutIntercept = intercept((txt) => {
     return;
@@ -66,13 +70,10 @@ var screen = blessed.screen({
 
 screen.title = 'TSR Auto Downloader';
 
-var openPhantomInstances = {};
-
 screen.key(['escape', 'q', 'C-c'], (ch, key) => {
-    Object.keys(openPhantomInstances).forEach((k) => {
-        openPhantomInstances[k].exit();
+    exec("Killall -KILL phantomjs", (err, stdout, stderr) => {
+        process.exit(0);
     });
-    return process.exit(0);
 });
 
 var displayForm = blessed.form({
@@ -123,6 +124,38 @@ var categoryDates = blessed.list({
 
 screen.append(categoryDates);
 
+var currentlyDownloadingTbl = {};
+
+function addCurrentlyDownloading(itemID, category) {
+    if (!(itemID in currentlyDownloadingTbl)) {
+        currentlyDownloadingTbl[itemID] = {
+            category: category,
+        };
+        updateCurrentlyDownloadingList();
+    }
+}
+
+function deleteCurrentlyDownloading(itemID) {
+    if (itemID in currentlyDownloadingTbl) {
+        delete currentlyDownloadingTbl[itemID];
+        updateCurrentlyDownloadingList();
+    }
+}
+
+function setCurrentlyDownloadingFileName(itemID, fileName) {
+    if (itemID in currentlyDownloadingTbl) {
+        currentlyDownloadingTbl[itemID].fileName = fileName;
+        updateCurrentlyDownloadingList();
+    }
+}
+
+function setCurrentlyDownloadingStage(itemID, stage) {
+    if (itemID in currentlyDownloadingTbl) {
+        currentlyDownloadingTbl[itemID].stage = stage;
+        updateCurrentlyDownloadingList();
+    }
+}
+
 var currentlyDownloading = blessed.list({
     parent: displayForm,
     top: '5%',
@@ -152,8 +185,6 @@ var currentlyDownloading = blessed.list({
 })
 
 screen.append(currentlyDownloading);
-
-var currentlyDownloadingTbl = {};
 
 var log = contrib.log({
     top: '50%',
@@ -192,6 +223,7 @@ var numberOfOpenPhamtomJSInstances = blessed.text({
 })
 
 screen.append(numberOfOpenPhamtomJSInstances)
+
 var spark = contrib.sparkline({
     label: 'Throughput (bits/sec)',
     tags: true,
@@ -253,9 +285,6 @@ async function updateNetworkStats() {
 updateNetworkStats();
 
 async function updateNumberOfDownloadedItems() {
-    const {
-        exec
-    } = require('child_process');
     const delay = 2000;
     const f = () => {
         exec('ls /home/whiro/s4s/{CAS,BB,Tray/{Lots,Sims,Pets}}/* | wc -l', (err, stdout, stderr) => {
@@ -271,15 +300,46 @@ async function updateNumberOfDownloadedItems() {
 updateNumberOfDownloadedItems();
 
 async function updateNumberOfOpenPhantomJSInstances() {
-    const delay = 500;
+    const delay = 2000;
     const f = () => {
-        numberOfOpenPhamtomJSInstances.setText("PhantomJS Instances: " + Object.keys(openPhantomInstances).length);
-        screen.render();
+        exec('pgrep phantomjs | wc -l', (err, stdout, stderr) => {
+            if (!err) {
+                numberOfOpenPhamtomJSInstances.setText("PhantomJS Instances: " + stdout);
+                screen.render();
+            }
+        });
     };
     setInterval(f, delay);
 }
 
 updateNumberOfOpenPhantomJSInstances();
+
+const maxPhantomJSInstances = 60;
+
+function getPhantomInstance() {
+    function execPromise(command) {
+        return new Promise(function(resolve, reject) {
+            exec(command, (error, stdout, stderr) => {
+                if (error) {
+                    reject(error);
+                    return;
+                }
+
+                resolve(stdout.trim());
+            });
+        });
+    }
+    const getInstance = async() => {
+        var numInstances = await execPromise("pgrep phantomjs | wc -l");
+        if (parseInt(numInstances) < maxPhantomJSInstances) {
+            var ph = await phantom.create();
+            return ph;
+        } else {
+            return getInstance();
+        }
+    }
+    return getInstance();
+}
 
 screen.render();
 
@@ -294,8 +354,12 @@ function updateCategoryDates() {
     categoryDates.clearItems();
     const renderCategoryDate = (category) => {
         if (typeof category.date !== 'undefined') {
-            categoryDates.addItem(category.category + ": " + category.date.format(time_format) + " (P: " + category.page + ")" + "[Children remaining: " + category.waitingChildren + "]");
-        }
+            var text = category.category + ": " + category.date.format(time_format) + " (P: " + category.page + ")";
+            if (typeof(category.waitingChildren) !== 'undefined') {
+                text += ' [Children: ' + category.waitingChildren + ']';
+            }
+            categoryDates.addItem(text);
+        };
     }
 
     category_downloaders.forEach(renderCategoryDate);
@@ -327,23 +391,12 @@ flushScreenAtInterval();
 
 const now = moment();
 
-/* Basic flow:
-   Category downloader:
-      State:  currentDate, currentPageNumber
-      Open category to the last seen date
-      Use axios to request the page, load the page into cheerio,
-      scrape the download links.
-      Create a detail downloader for each item on the page.
-      If no items or items on page are less than 21, go to the next date.
-      Go to the next page.
-*/
 const category_downloader = class {
     constructor(category) {
         this.category = category
         this.base_url = "http://thesimsresource.com/downloads/browse/category/sims4-" + category
         this.page = 1;
         this.date = undefined;
-        this.waitingChildren = 0;
         cldsdb.get(this.category).then((value) => {
             this.date = moment(value, time_format);
         }).catch((err) => {
@@ -384,56 +437,38 @@ const category_downloader = class {
             this.date.add(1, 'd')
             this.page = 1
             cldsdb.put(this.category, this.date.format(time_format));
-            appendLog("New date for " + this.category + ": " + this.date.format(time_format));
         } else {
             this.page = this.page + 1;
-            appendLog("New page for " + this.category + ": " + this.page);
         }
+        appendLog("Moving " + this.category + " to next page.");
         updateCategoryDates();
     }
     dl_children($, children) {
-        if (children === null) {
-            return [new Promise(resovle => {
-                resolve(true);
-            })];
-        }
         var childPromises = [];
         this.waitingChildren = children.length;
         children.each((child) => {
             var data_href = children[child].attribs['data-href'];
             var cdl = new detail_downloader(this.category, data_href);
-            const downloadChild = (cdl) => {
-                return new Promise(resolve => {
-                    cdl.download().then(() => {
-                        this.waitingChildren--;
-                        resolve(true);
-                    })
-                });
-            }
-            const promiseWhile = (data, condition, action) => {
-                var whilst = (data) => {
-                    return condition(data) ?
-                        action(data).then(whilst) :
-                        Promise.resolve(true);
+            appendLog("Downloading " + cdl.itemID + "...");
+            const downloadChild = async(cdl) => {
+                try {
+                    await cdl.download();
+                    this.waitingChildren--;
+                    return true;
+                } catch (err) {
+                    return downloadChild(cdl);
                 }
-                return whilst(data);
-            };
-            childPromises.push(promiseWhile(cdl, (cdl) => {
-                return !cdl.ack;
-            }, (cdl) => {
-                return downloadChild(cdl);
-            }));
+            }
+            childPromises.push(downloadChild(cdl));
         });
         return childPromises;
     }
     download_page() {
         return new Promise(resolve => {
             this.make_url().then((url) => {
-
                 var _ph, _page;
-                phantom.create().then((ph) => {
+                getPhantomInstance().then((ph) => {
                     _ph = ph;
-                    openPhantomInstances[this.category] = ph;
                     return ph.createPage();
                 }).then((page) => {
                     _page = page;
@@ -450,57 +485,42 @@ const category_downloader = class {
                             var detailChildren = $('a[data-href]');
                             var page_close_promise = _page.close();
                             page_close_promise.then(() => {
-                                _ph.exit();
-                                delete openPhantomInstances[this.category];
-                            })
-                            Promise.all(this.dl_children($, detailChildren)).then(() => {
-                                this.next_page(detailChildren.length <= 21);
-                                resolve(true);
+                                _ph.exit().then(() => {
+                                    var now = moment();
+                                    if (detailChildren.length > 0) {
+                                        Promise.all(this.dl_children($, detailChildren));
+                                    }
+                                    this.next_page(detailChildren.length <= 21);
+                                    resolve(true);
+                                });
                             });
                         });
                     });
+
                 });
             });
         });
     }
     download() {
-        const promiseWhile = (condition, action) => {
-            var whilst = () => {
-                return condition() ?
-                    this[action]().then(whilst) :
-                    Promise.resolve(true);
-            }
-            return whilst();
-        };
+        const downloadPage = async() => {
+            await this.download_page();
 
-        return promiseWhile(() => {
-            return (typeof this.date === 'undefined') || this.date.isBefore(now);
-        }, "download_page");
+            const delay = ms => {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            };
+
+            await delay(2000);
+
+            if (this.date.isAfter(now)) {
+                return true;
+            } else {
+                return downloadPage();
+            }
+        }
+        return downloadPage();
     }
 }
 
-function addCurrentlyDownloading(itemID, category) {
-    currentlyDownloadingTbl[itemID] = {
-        category: category,
-        stage: "Start"
-    };
-    updateCurrentlyDownloadingList();
-}
-
-function deleteCurrentlyDownloading(itemID) {
-    delete currentlyDownloadingTbl[itemID];
-    updateCurrentlyDownloadingList();
-}
-
-function setCurrentlyDownloadingFileName(itemID, fileName) {
-    currentlyDownloadingTbl[itemID].fileName = fileName;
-    updateCurrentlyDownloadingList();
-}
-
-function setCurrentlyDownloadingStage(itemID, stage) {
-    currentlyDownloadingTbl[itemID].stage = stage;
-    updateCurrentlyDownloadingList();
-}
 
 const detail_downloader = class {
     constructor(category, attr) {
@@ -508,32 +528,25 @@ const detail_downloader = class {
         this.category = category
         this.url = "https://thesimsresource.com" + attr;
         this.downloaded = false;
-        this.ack = false;
     }
     download() {
-        return new Promise(resolve => {
-            setTimeout(() => {
-                if (!this.ack) {
-                    resolve(false);
-                }
-            }, 60000);
+        return new Promise((resolve, reject) => {
+            var killTimeout = setTimeout(() => {
+                reject(false);
+            }, 45000);
             var _ph, _page;
             addCurrentlyDownloading(this.itemID, this.category);
-            setCurrentlyDownloadingStage(this.itemID, "PhantomJS");
-            phantom.create().then((ph) => {
+            setCurrentlyDownloadingStage(this.itemID, "Starting");
+            getPhantomInstance().then((ph) => {
                 _ph = ph;
-                openPhantomInstances[this.itemID] = ph;
                 return ph.createPage();
             }).then((page) => {
-                setCurrentlyDownloadingStage(this.itemID, "Page Open");
-                this.stage = "Open Page"
                 _page = page;
                 page.on('onError', function() {
                     return;
                 });
                 return _page.open(this.url);
             }).then((status) => {
-                setCurrentlyDownloadingStage(this.itemID, "Checking");
                 const waitForDownload = () => {
                     return new Promise(resolve => {
                         const delay = 500;
@@ -556,7 +569,6 @@ const detail_downloader = class {
                         }
                     });
                     _page.evaluate(function(itemID) {
-                        var urlOut = null;
                         _dl(itemID, null, function(url, data) {
                             console.log(url);
                         });
@@ -568,9 +580,9 @@ const detail_downloader = class {
                                 if (url !== null) {
                                     var page_close_promise = _page.close();
                                     page_close_promise.then(() => {
-                                        _ph.exit();
-                                        delete openPhantomInstances[this.itemID];
-                                        resolve(url);
+                                        _ph.exit().then(() => {
+                                            resolve(url);
+                                        });
                                     });
                                 } else {
                                     setTimeout(f, delay);
@@ -579,33 +591,39 @@ const detail_downloader = class {
                             f();
                         });
                     }
-                    var saving = false;
+                    setCurrentlyDownloadingStage(this.itemID, "Get DL URL");
+                    var saved = false;
+
                     get_url().then((url) => {
                         function grabFilenameFromResponse(headers) {
                             return headers.match("filename=\"(.+)\"")[1];
                         }
 
+                        setCurrentlyDownloadingStage(this.itemID, "Get Filename");
                         axios.get(url).then((response) => {
+                            clearTimeout(killTimeout);
                             var file_name = grabFilenameFromResponse(response.headers['content-disposition']).replace(/[^a-z0-9]/gi, '_').toLowerCase().replaceLast("_package", ".package").replaceLast("_zip", ".zip");
                             var path = "/home/whiro/s4s/" + category_type[this.category] + '/';
+                            setCurrentlyDownloadingStage(this.itemID, "Checking");
                             if (!fs.existsSync(path + file_name)) {
-                                saving = true;
                                 setCurrentlyDownloadingStage(this.itemID, "Saving");
-                                setCurrentlyDownloadingFileName(this.itemID, path + file_name);
+                                setCurrentlyDownloadingFileName(this.itemID, file_name);
                                 fs.writeFileSync(path + file_name, response.data);
+                                saved = true;
                             }
                             this.downloaded = true;
                         });
                     });
                     waitForDownload().then(() => {
-                        setCurrentlyDownloadingStage(this.itemID, saving ? "Finished" : "Skipped");
+                        setCurrentlyDownloadingStage(this.itemID, saved ? "Finished" : "Skipped");
                         setTimeout(() => {
                             deleteCurrentlyDownloading(this.itemID);
                         }, 5000);
-                        this.ack = true;
                         resolve(true);
                     });
                 });
+            }).catch((err) => {
+                reject(false);
             });
         });
     }
