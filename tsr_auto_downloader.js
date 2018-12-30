@@ -20,12 +20,12 @@ const {
 
 // Returns a generic-pool instance
 const pool = createPhantomPool({
-    max: 60, // default
-    min: 30, // default
+    max: 50, // default
+    min: 0, // default
     // how long a resource can stay idle in pool before being removed
-    idleTimeoutMillis: 1200000, // default.
+    idleTimeoutMillis: 30000, // default.
     // maximum number of times an individual resource can be reused before being destroyed; set to 0 to disable
-    maxUses: 0, // default
+    maxUses: 12, // default
     // function to validate an instance prior to use; see https://github.com/coopernurse/node-pool#createpool
     validator: () => Promise.resolve(true), // defaults to always resolving true
     // validate resource before borrowing; required for `maxUses and `validator`
@@ -449,8 +449,8 @@ function updateCategoryInfoPanel() {
     const renderCategoryInfoPanel = (category) => {
         if (typeof category.date !== 'undefined') {
             var text = category.category + ": " + category.date.format(time_format) + " (P: " + category.page + ")";
-            if (typeof(category.waitingChildren) !== 'undefined') {
-                text += ' [Children: ' + category.waitingChildren + ']';
+            if (typeof(category.waitingDownloads) !== 'undefined') {
+                text += ' [Downloads: ' + category.waitingDownloads + ']';
             }
             categoryInfoPanel.addItem(text);
         }
@@ -470,6 +470,7 @@ function updateCurrentlyDownloadingList() {
         currentlyDownloading.addItem(text);
     }
     Object.keys(currentlyDownloadingTbl).forEach(renderCurrentlyDownloading);
+    currentlyDownloading.label = 'Currently Downloading (' + Object.keys(currentlyDownloadingTbl).length + ' Active)';
     screen.render();
 }
 
@@ -500,22 +501,6 @@ const category_downloader = class {
                 this.date = moment(first_date);
             }
         });
-        const waitForDate = () => {
-            return new Promise(resolve => {
-                const delay = 500;
-                const f = () => {
-                    if (typeof(this.date) !== 'undefined') {
-                        resolve(true);
-                    } else {
-                        setTimeout(f, delay);
-                    }
-                }
-                f();
-            });
-        }
-        waitForDate().then(() => {
-            return;
-        });
     }
     make_url() {
         return new Promise(resolve => {
@@ -531,63 +516,58 @@ const category_downloader = class {
             f();
         });
     }
-    next_page(incDate) {
-        if (incDate) {
+    next_page() {
+        if (this.advance_date) {
             this.date.add(1, 'd')
             this.page = 1
             cldsdb.put(this.category, this.date.format(time_format));
         } else {
             this.page = this.page + 1;
         }
+        this.advance_date = false;
         appendLog("Moving " + this.category + " to next page.");
         updateCategoryInfoPanel();
     }
-    dl_children($, children) {
-        var childPromises = [];
-        this.waitingChildren = children.length;
+    download_page_items(html) {
+        const $ = cheerio.load(html);
+        var downloads = $('a[data-href]');
+        var downloadPromises = [];
+        this.waitingDownloads = downloads.length;
         updateCategoryInfoPanel();
-        children.each((child) => {
-            var data_href = children[child].attribs['data-href'];
-            var cdl = new detail_downloader(this, data_href);
-            appendLog("Downloading " + cdl.itemID + "...");
-            childPromises.push(cdl.download());
+        const dl_item = async (ddl) => {
+            var res = await ddl.download();
+            if (res) {
+                return;
+            } else {
+                dl_item(ddl);
+            }
+        }
+        downloads.each((download) => {
+            var data_href = downloads[download].attribs['data-href'];
+            var ddl = new detail_downloader(this, data_href);
+            appendLog("Downloading " + ddl.itemID + "...");
+            downloadPromises.push(dl_item(ddl));
         });
-        return childPromises;
+        this.advance_date = downloads.length <= 21;
+        return downloadPromises;
     }
     download_page() {
         const dl_page = async () => {
-            const ready = new Promise(resolve => {
-                pool.use(async (instance) => {
-                    var url = await this.make_url();
-                    updateCategoryInfoPanel();
-                    var page = await instance.createPage();
-                    await page.on('onError', function () {
-                        return;
-                    });
-                    await page.open(url);
-                    await page.property('content');
-                    var html = await page.evaluate(function () {
-                        // eslint-disable-next-line no-undef
-                        return document.body.innerHTML;
-                    });
-                    await page.close();
-                    return html;
-                }).then((html) => {
-                    const $ = cheerio.load(html);
-                    var detailChildren = $('a[data-href]');
-                    if (detailChildren.length === 0) {
-                        resolve(true);
-                    }
-                    Promise.all(this.dl_children($, detailChildren)).then(() => {
-                        this.next_page(detailChildren.length <= 21);
-                        resolve(true);
-                    });
+            var url = await this.make_url();
+            appendLog("Opening " + url + "...");
+            var response = await axios.get(url);
+            var ready = new Promise(resolve => {
+                Promise.all(this.download_page_items(response.data)).then(() => {
+                    this.next_page();
+                    resolve()
                 });
             });
             await ready;
-            return true;
+            return;
         }
-        return dl_page();
+        return new Promise(resolve => {
+            dl_page().then(resolve);
+        });
     }
     download() {
         const downloadPage = async () => {
@@ -622,86 +602,70 @@ const detail_downloader = class {
         return new Promise(resolve => {
             addCurrentlyDownloading(this.itemID, this.owner.category);
             setCurrentlyDownloadingStage(this.itemID, "Init");
-            const downloaded = () => {
-                return new Promise((resolve, reject) => {
-                    setTimeout(reject, 45000);
-                    pool.use(async (instance) => {
-                        var page = await instance.createPage();
-                        setCurrentlyDownloadingStage(this.itemID, "Open TSR Page");
-                        await page.on('onError', function () {
-                            return;
-                        });
-                        await page.open(this.url);
-                        setCurrentlyDownloadingStage(this.itemID, "Get Content");
-                        await page.property('content');
-                        var _url = null;
-                        await page.on('onConsoleMessage', function (msg) {
-                            if (msg.match(dl_url)) {
-                                _url = msg;
-                            }
-                        });
-                        const get_url = async () => {
-                            const delay = (ms) => {
-                                return new Promise(resolve => setTimeout(resolve, ms));
-                            }
-                            if (_url !== null) {
-                                await page.close();
-                                return _url;
-                            } else {
-                                await delay(500);
-                                return get_url();
-                            }
-                        }
-                        page.evaluate(function (itemID) {
-                            // eslint-disable-next-line no-undef
-                            _dl(itemID, null, function (url) {
-                                // eslint-disable-next-line no-console
-                                console.log(url);
-                            });
-                        }, this.itemID);
-                        setCurrentlyDownloadingStage(this.itemID, "Get DL URL");
-                        var url = await get_url();
-                        return url;
-                    }).then((url) => {
-                        var saved = false;
-                        axios.get(url).then((response) => {
-                            const grabFilenameFromResponse = (headers) => {
-                                return headers.match("filename=\"(.+)\"")[1];
-                            }
-                            var file_name = grabFilenameFromResponse(response.headers['content-disposition']).replace(/[^a-z0-9]/gi, '_').toLowerCase().replaceLast("_package", ".package").replaceLast("_zip", ".zip");
-                            var path = "/home/whiro/s4s/" + category_type[this.owner.category] + '/';
-                            setCurrentlyDownloadingStage(this.itemID, "Checking");
-                            if (!fs.existsSync(path + file_name)) {
-                                setCurrentlyDownloadingStage(this.itemID, "Saving");
-                                setCurrentlyDownloadingFileName(this.itemID, file_name);
-                                fs.writeFileSync(path + file_name, response.data);
-                                saved = true;
-                            }
-                            this.downloaded = true;
-                            setCurrentlyDownloadingStage(this.itemID, saved ? "Finished" : "Skipped");
-                            setTimeout(() => {
-                                deleteCurrentlyDownloading(this.itemID);
-                            }, 5000);
-                            resolve(true);
-                        });
-                    });
+            setTimeout(() => {
+                resolve(false);
+            }, 45000);
+            pool.use(async (instance) => {
+                var page = await instance.createPage();
+                setCurrentlyDownloadingStage(this.itemID, "Open TSR Page");
+                await page.on('onError', function () {
+                    return;
                 });
-            };
-            const dl = async () => {
-                try {
-                    await downloaded();
-                    this.owner.waitingChildren--;
-                    updateCategoryInfoPanel();
-                    resolve(true);
-                } catch (err) {
+                await page.open(this.url);
+                setCurrentlyDownloadingStage(this.itemID, "Get Content");
+                await page.property('content');
+                var _url = null;
+                await page.on('onConsoleMessage', function (msg) {
+                    if (msg.match(dl_url)) {
+                        _url = msg;
+                    }
+                });
+                const get_url = async () => {
                     const delay = (ms) => {
                         return new Promise(resolve => setTimeout(resolve, ms));
-                    };
-                    await delay(500);
-                    dl();
+                    }
+                    if (_url !== null) {
+                        await page.close();
+                        return _url;
+                    } else {
+                        await delay(500);
+                        return get_url();
+                    }
                 }
-            }
-            dl();
+                page.evaluate(function (itemID) {
+                    // eslint-disable-next-line no-undef
+                    _dl(itemID, null, function (url) {
+                        // eslint-disable-next-line no-console
+                        console.log(url);
+                    });
+                }, this.itemID);
+                setCurrentlyDownloadingStage(this.itemID, "Get DL URL");
+                var url = await get_url();
+                return url;
+            }).then((url) => {
+                var saved = false;
+                axios.get(url).then((response) => {
+                    const grabFilenameFromResponse = (headers) => {
+                        return headers.match("filename=\"(.+)\"")[1];
+                    }
+                    var file_name = grabFilenameFromResponse(response.headers['content-disposition']).replace(/[^a-z0-9]/gi, '_').toLowerCase().replaceLast("_package", ".package").replaceLast("_zip", ".zip");
+                    var path = "/home/whiro/s4s/" + category_type[this.owner.category] + '/';
+                    setCurrentlyDownloadingStage(this.itemID, "Checking");
+                    if (!fs.existsSync(path + file_name)) {
+                        setCurrentlyDownloadingStage(this.itemID, "Saving");
+                        setCurrentlyDownloadingFileName(this.itemID, file_name);
+                        fs.writeFileSync(path + file_name, response.data);
+                        saved = true;
+                    }
+                    this.downloaded = true;
+                    this.owner.waitingDownloads--;
+                    setCurrentlyDownloadingStage(this.itemID, saved ? "Finished" : "Skipped");
+                    setTimeout(() => {
+                        deleteCurrentlyDownloading(this.itemID);
+                    }, 5000);
+                    resolve(true);
+                });
+            });
         });
     }
 }
