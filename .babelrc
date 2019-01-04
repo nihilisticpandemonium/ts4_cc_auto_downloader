@@ -1,0 +1,18 @@
+{
+    "presets": ["@babel/preset-env"],
+    "plugins": [
+        ["@babel/plugin-proposal-decorators", { "decoratorsBeforeExport": true }],
+        "@babel/plugin-proposal-class-properties",
+        "@babel/plugin-proposal-private-methods",
+        "@babel/plugin-proposal-do-expressions",
+        "@babel/plugin-proposal-logical-assignment-operators",
+        "@babel/plugin-proposal-export-default-from",
+        ["@babel/plugin-proposal-pipeline-operator", { "proposal": "minimal" }],
+        "@babel/plugin-syntax-bigint",
+        "@babel/plugin-syntax-class-properties",
+        ["@babel/plugin-syntax-decorators", { "decoratorsBeforeExport": true }],
+        "@babel/plugin-syntax-dynamic-import",
+        ["@babel/plugin-syntax-pipeline-operator", { "proposal": "minimal" }],
+        "@babel/plugin-transform-exponentiation-operator"
+    ]
+}

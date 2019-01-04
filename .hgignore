@@ -10,6 +10,9 @@ data/
 # Node #
 node_modules/
 
+# Babel
+lib/
+
 # Grunt build #
 dist/
 
