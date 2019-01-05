@@ -13,6 +13,9 @@ node_modules/
 # Babel
 lib/
 
+# TypeScript
+spec/
+
 # Grunt build #
 dist/
 

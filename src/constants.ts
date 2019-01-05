@@ -1,4 +1,4 @@
-const moment = require('moment');
+import moment from 'moment';
 
 export const time_format = "YYYY-MM-DD";
 export const first_date_string = "2014-09-06";
