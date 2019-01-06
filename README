@@ -1,0 +1,29 @@
+This little tool auto bulk downloads all of the CC available from TSR, BEO creations, and downwithpatreon.
+
+The items downloaded from TSR are split into subfolders representing their use in the game, to aid in HQ conversion if you want to use the HQ mod.
+
+How to use:
+
+  Install the latest version of node.js somewhere.
+
+  Clone this repository.
+
+  CD into the repositories directory, and run npm install.
+
+  At this point, you have all of the dependencies.
+
+  In the project directory, type npm build to build the project.
+
+  Create a file named .ts4ccadrc.json in the folder with the following:
+
+  {
+    "destination": "the/base/directory/where/the/downloads/should/go"
+  }
+
+  If you're on linux or OS X, just type npm run start and the magic happens.
+
+  If you're on Windows, things are a little more complicated but not impossible.
+
+  Follow the directions here: http://webservices20.blogspot.com/2015/04/running-terminal-dashboards-on-windows.html
+
+  Now start up a terminal somewhere, cd into the project directory, type npm run start and watch the magic happen.
