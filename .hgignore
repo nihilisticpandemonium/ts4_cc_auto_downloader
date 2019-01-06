@@ -14,7 +14,7 @@ node_modules/
 lib/
 
 # TypeScript
-spec/
+types/
 
 # Grunt build #
 dist/

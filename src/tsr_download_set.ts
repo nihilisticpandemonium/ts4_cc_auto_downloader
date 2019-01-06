@@ -1,16 +1,16 @@
-import { DownloadSetBase } from './download_set_base';
-import { time_format, first_date, pets_first_date, now } from './constants';
-import { sleep } from './ts4_ad_util.js';
-import { uiManager, appendLog } from './ui_manager';
-import { TSRItemDownloader } from './tsr_item_downloader';
+import { DownloadSetBase } from "./download_set_base";
+import { time_format, first_date, pets_first_date, now } from "./constants";
+import { sleep } from "./ts4_ad_util.js";
+import { uiManager, appendLog } from "./ui_manager";
+import { TSRItemDownloader } from "./tsr_item_downloader";
 
-import levelup from 'levelup';
-import leveldown from 'leveldown';
-import axios from 'axios';
-import cheerio from 'cheerio';
-import moment, { Moment } from 'moment';
+import levelup from "levelup";
+import leveldown from "leveldown";
+import axios from "axios";
+import cheerio from "cheerio";
+import moment, { Moment } from "moment";
 
-const cldsdb = levelup(leveldown('./data/category_date.db'));
+const cldsdb = levelup(leveldown("./data/category_date.db"));
 
 export class TSRDownloadSet extends DownloadSetBase {
     private base_url: string;
@@ -21,15 +21,15 @@ export class TSRDownloadSet extends DownloadSetBase {
     private advance_date: boolean;
 
     constructor(category: string) {
-        super('TSR', category);
+        super("TSR", category);
         this.base_url =
-            'http://thesimsresource.com/downloads/browse/category/sims4-' +
+            "http://thesimsresource.com/downloads/browse/category/sims4-" +
             category;
         this.page = 1;
         this.date_found = false;
         this.waiting_downloads = 0;
         this.advance_date = false;
-        this.date = moment('1901-01-01', time_format);
+        this.date = moment("1901-01-01", time_format);
 
         const gd = async () => {
             try {
@@ -39,7 +39,7 @@ export class TSRDownloadSet extends DownloadSetBase {
                     this.date = moment(now);
                 }
             } catch (err) {
-                if (this.getSetIdentifier() === 'pets') {
+                if (this.getSetIdentifier() === "pets") {
                     this.date = moment(pets_first_date);
                 } else {
                     this.date = moment(first_date);
@@ -68,7 +68,7 @@ export class TSRDownloadSet extends DownloadSetBase {
     }
     private next_page() {
         if (this.advance_date) {
-            this.date.add(1, 'd');
+            this.date.add(1, "d");
             this.page = 1;
             cldsdb.put(this.getSetIdentifier(), this.date.format(time_format));
         } else {
@@ -84,12 +84,12 @@ export class TSRDownloadSet extends DownloadSetBase {
     private download_page_items(h: string): Promise<void> {
         return new Promise(resolve => {
             const $ = cheerio.load(h);
-            let ds = $('a[data-href]');
+            let ds = $("a[data-href]");
             this.waiting_downloads = ds.length;
             uiManager.markDownloadSetInfoPanelDirty();
             const dp: Promise<void>[] = [];
             ds.each(d => {
-                let dh = ds[d].attribs['data-href'];
+                let dh = ds[d].attribs["data-href"];
                 let ddl = new TSRItemDownloader(this, dh);
                 dp.push(ddl.download());
             });
@@ -106,9 +106,10 @@ export class TSRDownloadSet extends DownloadSetBase {
             var k = setTimeout(() => resolve(false), 45000);
             const dl = async () => {
                 let u = await this.make_url();
+                uiManager.markDownloadSetInfoPanelDirty();
                 appendLog(
                     this.getSetIdentifier() +
-                        ': ' +
+                        ": " +
                         this.date.format(time_format)
                 );
                 const r = await axios.get(u);
@@ -144,14 +145,14 @@ export class TSRDownloadSet extends DownloadSetBase {
     getExtraText(): string {
         if (this.date_found) {
             return (
-                ': ' +
+                ": " +
                 this.date.format(time_format) +
-                ' [Downloading: ' +
+                " [Downloading: " +
                 this.waiting_downloads +
-                ']'
+                "]"
             );
         } else {
-            return '';
+            return "";
         }
     }
 }

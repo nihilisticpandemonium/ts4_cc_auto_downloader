@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 require('@babel/polyfill');
+require('source-map-support').install();
 
 // TSR Auto Downloader by whiro, run from command-line
 const intercept = require('intercept-stdout');

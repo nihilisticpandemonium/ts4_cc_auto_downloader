@@ -75,8 +75,7 @@ class UIManager {
         this.currentDownloadInfoDirty = false;
 
         this.screen = blessed.screen({
-            smartCSR: true,
-            useBCE: true
+            smartCSR: true
         });
 
         this.screen.title = "The SIMS 4 CC Auto Downloader";
@@ -104,6 +103,17 @@ class UIManager {
 
         this.screen.append(displayForm);
 
+        const img = blessed.overlayimage({
+            file: __dirname + "/ts4logo.png",
+            top: "95.5%",
+            left: "94%",
+            width: "5%",
+            height: "3.5%",
+            ansi: false,
+            w3m: "/usr/lib/w3m/w3mimagedisplay",
+            search: "false"
+        });
+
         this.downloadSetInfoPanel = blessed.list({
             parent: displayForm,
             top: "5%",
@@ -130,17 +140,6 @@ class UIManager {
 
         this.screen.append(this.downloadSetInfoPanel);
 
-        const img = blessed.image({
-            file: __dirname + "/ts4logo.png",
-            top: "94.5%",
-            left: "90%",
-            width: "6%",
-            height: "4%",
-            type: "overlay"
-        });
-
-        this.screen.append(img);
-
         this.currentlyDownloadingInfoPanel = blessed.list({
             parent: displayForm,
             top: "5%",
@@ -153,6 +152,7 @@ class UIManager {
                 type: "line"
             },
             style: {
+                bg: "cyan",
                 item: {
                     fg: "white",
                     bg: "cyan"
@@ -178,14 +178,8 @@ class UIManager {
                 type: "line"
             },
             style: {
-                item: {
-                    bg: "blue",
-                    fg: "white"
-                },
-                selected: {
-                    bg: "blue",
-                    fg: "white"
-                }
+                fg: "white",
+                bg: "blue"
             }
         });
 
@@ -256,10 +250,15 @@ class UIManager {
         });
 
         this.screen.append(this.cpuLoadGraph); //must append before setting data
-        this.render_loop_interval = this.start_render_loop();
+
+        img.setBack();
+
+        this.screen.render();
+
         this.network_stat_interval = this.start_update_network_stats();
         this.cpu_load_interval = this.start_monitor_cpu_load();
         this.number_downloaded_interval = this.start_monitor_download_counts();
+        this.render_loop_interval = this.start_render_loop();
     }
 
     public static get Instance(): UIManager {
