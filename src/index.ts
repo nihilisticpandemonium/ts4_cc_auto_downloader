@@ -1,88 +1,97 @@
 #!/usr/bin/env node
+import sourceMapSupport from 'source-map-support';
 
-require('@babel/polyfill');
-require('source-map-support').install();
+sourceMapSupport.install();
 
 // TSR Auto Downloader by whiro, run from command-line
-const intercept = require('intercept-stdout');
+import interceptStdout from 'intercept-stdout';
 
-// eslint-disable-next-line no-unused-vars, no-unused-vars
-const disableStdoutIntercept = intercept(
-    (txt: string): void => {
-        return;
-    }
+const disableStdoutIntercept = interceptStdout(
+  (txt: string): void => {
+    return;
+  }
 );
-// eslint-disable-next-line no-unused-vars, no-unused-vars
-const disableStderrIntercept = intercept(
-    (txt: string): void => {
-        return;
-    }
+const disableStderrIntercept = interceptStdout(
+  (txt: string): void => {
+    return;
+  }
 );
 
 const disableUnhandledRejection = true;
 
 if (disableUnhandledRejection) {
-    process.on('unhandledRejection', function() {
-        //logger.error('Unhandled rejection', {reason: reason, promise: promise})
-    });
+  process.on('unhandledRejection', () => {
+    //logger.error('Unhandled rejection', {reason: reason, promise: promise})
+  });
 }
 
 disableStdoutIntercept();
 disableStderrIntercept();
 
-import { uiManager, appendLog } from './ui_manager';
-import { TSRDownloadSet } from './tsr_download_set';
-import { DWPDownloadSet } from './dwp_download_set';
-import { BeoDownloadSet } from './beo_download_set';
+import { uiManager, appendLog } from './UIManager';
+import { TSRDownloadSet } from './TSRDownloadSet';
+import { DWPDownloadSet } from './DWPDownloadSet';
+import { BeoDownloadSet } from './BeoDownloadSet';
+import { DownloadSetBase } from './DownloadSetBase';
 
-const tsr_categories = [
-    'clothing',
-    'shoes',
-    'hair',
-    'makeup',
-    'accessories',
-    'eyecolors',
-    'skintones',
-    'walls',
-    'floors',
-    'objects',
-    'objectrecolors',
-    'lots',
-    'sims',
-    'pets'
+const tsrCategories = [
+  'clothing',
+  'shoes',
+  'hair',
+  'makeup',
+  'accessories',
+  'eyecolors',
+  'skintones',
+  'walls',
+  'floors',
+  'objects',
+  'objectrecolors',
+  'lots',
+  'sims',
+  'pets'
 ];
-const dwp_main_pages = [
-    'ts4patreon-index.php',
-    'adult-index.php',
-    'ts4pay-index.php'
+const dwpMainPages = [
+  'ts4patreon-index.php',
+  'adult-index.php',
+  'ts4pay-index.php'
 ];
-const beo_main_pages = ['clothing_s4.php', 'accessories_s4.php', 'hair_s4.php'];
+const beoMainPages = ['clothing_s4.php', 'accessories_s4.php', 'hair_s4.php'];
 
-const ds: Array<Promise<void>> = [];
+const pt: Map<string, string[]> = new Map<string, string[]>();
+pt.set('tsr', tsrCategories);
+pt.set('dwp', dwpMainPages);
+pt.set('beo', beoMainPages);
 
-tsr_categories.forEach(c => {
-    appendLog('Opening ' + c + ' for downloading.');
-    const d = new TSRDownloadSet(c);
-    ds.push(d.download());
-});
+const ds: Promise<void>[] = [];
 
-dwp_main_pages.forEach(p => {
-    appendLog('Opening ' + p + ' for downloading.');
-    const d = new DWPDownloadSet(p);
-    ds.push(d.download());
-});
-
-beo_main_pages.forEach(p => {
-    appendLog('Opening ' + p + ' for downloading');
-    const b = new BeoDownloadSet(p);
-    ds.push(b.download());
-});
+for (const kv of pt) {
+  const p = kv[1];
+  p.forEach((pg: string) => {
+    let o: DownloadSetBase;
+    switch (kv[0]) {
+      case 'tsr':
+        o = new TSRDownloadSet(pg);
+        break;
+      case 'dwp':
+        o = new DWPDownloadSet(pg);
+        break;
+      case 'beo':
+        o = new BeoDownloadSet(pg);
+        break;
+      default:
+    }
+    if (o !== undefined) {
+      ds.push(o.download());
+    }
+  });
+}
 
 Promise.all(ds).then(() => {
-    disableStdoutIntercept();
-    uiManager.destroy();
-    // eslint-disable-next-line no-console
-    console.log('Finished downloading everything.');
-    process.exit(0);
+  disableStdoutIntercept();
+  uiManager.destroy();
+  // eslint-disable-next-line no-console
+  console.log('Finished downloading everything.');
+  process.exit(0);
 });
+
 // eslint-disable-next-line eol-last

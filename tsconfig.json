@@ -1,17 +1,18 @@
 {
-    "compilerOptions": {
-        // Target latest version of ECMAScript.
-        "target": "esnext",
-        // Search under node_modules for non-relative imports.
-        "moduleResolution": "node",
-        // Process & infer types from .js files.
-        "declaration": true,
-        "declarationMap": true,
-        "declarationDir": "./types",
-        // Enable strictest settings like strictNullChecks & noImplicitAny.
-        "strict": false,
-        // Import non-ES modules as default imports.
-        "esModuleInterop": true
-    },
-    "include": ["src"]
+  "compilerOptions": {
+    // Target latest version of ECMAScript.
+    "target": "es6",
+    // Search under node_modules for non-relative imports.
+    "moduleResolution": "node",
+    "outDir": "./types",
+    // Process & infer types from .js files.
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+    // Enable strictest settings like strictNullChecks & noImplicitAny.
+    "strict": true,
+    // Import non-ES modules as default imports.
+    "esModuleInterop": true,
+    "downlevelIteration": true
+  }
 }

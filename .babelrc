@@ -1,8 +1,8 @@
 {
-    "presets": ["@babel/env", ["@babel/typescript", { "allExtensions": true }]],
-    "plugins": [
-        "@babel/proposal-class-properties",
-        "@babel/proposal-object-rest-spread",
-        "@babel/proposal-optional-chaining"
-    ]
+  "presets": [
+    ["@babel/preset-env", { "targets": { "node": true } }],
+    "@babel/preset-typescript",
+    ["babel-preset-proposal-typescript", { "allExtensions": true }]
+  ],
+  "plugins": ["@babel/plugin-proposal-optional-chaining"]
 }
