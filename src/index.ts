@@ -25,9 +25,6 @@ if (disableUnhandledRejection) {
   });
 }
 
-disableStdoutIntercept();
-disableStderrIntercept();
-
 import { uiManager, appendLog } from './UIManager';
 import { TSRDownloadSet } from './TSRDownloadSet';
 import { DWPDownloadSet } from './DWPDownloadSet';
