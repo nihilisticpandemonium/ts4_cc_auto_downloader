@@ -128,8 +128,7 @@ class UIManager {
       width: '5%',
       height: '3.5%',
       ansi: false,
-      w3m: '/usr/lib/w3m/w3mimagedisplay',
-      search: 'false'
+      w3mDisplay: '/usr/lib/w3m/w3mimagedisplay'
     });
 
     this.downloadSetInfoPanel = blessed.list({
