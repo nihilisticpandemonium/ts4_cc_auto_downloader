@@ -4,7 +4,7 @@
   "description": "The Sims 4 CC Auto Downloader",
   "main": "lib/index.js",
   "watch": {
-    "build-with-lint": {
+    "build-babel": {
       "patterns": [
         "src/*.ts"
       ],
@@ -16,6 +16,7 @@
     "clean-types": "rm -rf types && mkdir types",
     "clean-lib": "rm -rf lib && mkdir lib",
     "clean": "npm run clean-lib && npm run clean-types",
+    "copy-resources": "cp res/* lib",
     "build-gen-types": "node_modules/.bin/tsc",
     "build-babel": "node_modules/.bin/babel --extensions='.ts' 'src/*' -d lib -s inline",
     "build": "node_modules/.bin/npm-run-all -p build-gen-types build-babel",
