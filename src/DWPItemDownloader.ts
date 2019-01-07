@@ -1,6 +1,6 @@
 import { ItemDownloaderBase } from './ItemDownloaderBase';
 import { FILENAME_REGEX } from './Constants';
-import { uiManager } from './UIManager';
+import { uiManager, appendLog } from './UIManager';
 import { DownloadSetBase } from './DownloadSetBase';
 import { P } from './TS4ADUtil';
 
@@ -19,6 +19,7 @@ export class DWPItemDownloader extends ItemDownloaderBase {
         await this.save_if_needed(this.getUrl(), fn);
         resolve();
       };
+      _z();
     });
   }
 }

@@ -115,7 +115,6 @@ export class DWPDownloadSet extends DownloadSetBase {
         this.currentPage = dlp.match(fr)?.[1];
         if (this.currentPage !== null && !dwpFilterPages.includes(this.currentPage)) {
           uiManager.markDownloadSetInfoPanelDirty();
-          appendLog(dlp);
           // eslint-disable-next-line no-await-in-loop
           const z = await this.getZipsFromPage(dlp);
           const pz = dzs(z);
