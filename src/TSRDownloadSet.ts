@@ -130,8 +130,6 @@ export class TSRDownloadSet extends DownloadSetBase {
         r = await this.downloadPage();
       }
 
-      await sleep(2000);
-
       this.nextPage();
 
       if (this.date.isAfter(now)) {

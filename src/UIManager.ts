@@ -1,26 +1,20 @@
-/* eslint-disable import/max-dependencies */
 import blessed, { Widgets, colors, BlessedProgram } from 'blessed';
 import blessedContrib, { Widgets as ContribWidgets } from 'blessed-contrib';
 import systeminformation from 'systeminformation';
-import util from 'util';
-import { exec } from 'child_process';
 import rc from 'rc';
 import os from 'os';
 import numeral from 'numeral';
+import fs from 'fs-extra';
 
 import './ArrayExtensions';
-import './TS4ADUtil';
 
 import { formatBytes, titleCase } from './TS4ADUtil';
 import { DownloadSetBase } from './DownloadSetBase';
 import { ItemDownloaderBase } from './ItemDownloaderBase';
-import { finished } from 'stream';
 
 const conf = rc('ts4ccad', {
   destination: `${os.homedir()}/s4s`
 });
-
-const sleep = util.promisify(setTimeout);
 
 const downloadSetInfoPanelLabel = 'Download Set Status Info';
 const currentlyDownloadingInfoPanelLabel = 'Currently Downloading Info';
@@ -331,7 +325,7 @@ class UIManager {
 
           const titles: string[] = Array.apply(null, new Array(cs.length))
             .map(Number.call, Number)
-            .map((n: {}, i: number, a: {}[]) => n.toString());
+            .map((n: {}) => n.toString());
           this.cpuLoadGraph.setData({
             titles: titles,
             data: cs
@@ -347,11 +341,11 @@ class UIManager {
       directoriesToMonitor.forEach((d: string) => {
         const p = (): Promise<void> => {
           return new Promise((resolve: P<void>) => {
-            exec(
-              `find ${this.baseDownloadDestination}/${d} -type f | wc -l`,
-              (err, stdout) => {
+            fs.readdir(
+              `${this.baseDownloadDestination}/${d}`,
+              (err: NodeJS.ErrnoException, files: string[]) => {
                 if (!err) {
-                  dirResults[d] = parseInt(stdout, 10);
+                  dirResults[d] = files.length;
                 } else {
                   dirResults[d] = 0;
                 }
@@ -407,7 +401,8 @@ class UIManager {
   }
   public removeCurrentlyDownloadingItem(item: ItemDownloaderBase) {
     this.currentlyDownloadingItems.splice(
-      this.currentlyDownloadingItems.indexOf(item)
+      this.currentlyDownloadingItems.indexOf(item),
+      1
     );
     this.currentlyDownloadingInfoPanel.removeItem(item.getElement());
     this.markCurrentlyDownloadingInfoPanelDirty();

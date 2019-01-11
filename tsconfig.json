@@ -14,5 +14,6 @@
     // Import non-ES modules as default imports.
     "esModuleInterop": true,
     "downlevelIteration": true
-  }
+  },
+  "include": ["ts_type_gen"]
 }

@@ -1,11 +1,12 @@
-import util from 'util';
 import shortUuid from 'short-uuid';
-import fs from 'fs';
+import fs from 'graceful-fs';
 import axios, { AxiosResponse } from 'axios';
 import { DownloadSetBase } from './DownloadSetBase.js';
 import { UIListElement } from './UIListElement.js';
 import progressStream from 'progress-stream';
 import { uiManager, appendLog } from './UIManager';
+import levelup from 'levelup';
+import leveldown from 'leveldown';
 
 import './StringExtensions';
 
@@ -22,7 +23,7 @@ async function writeBinaryDataToFile(
     time: 100
   });
 
-  prg.on('progress', (p: any) => {
+  prg.on('progriess', (p: any) => {
     id.setDownloadProgress(p.percentage / 100);
     uiManager.markCurrentlyDownloadingInfoPanelDirty();
   });
@@ -31,14 +32,14 @@ async function writeBinaryDataToFile(
     const out = fs.createWriteStream(id.getFullDestination());
     out.on('finish', () => {
       id.setDownloadProgress(1);
+      out.end();
       resolve();
     });
     response.data.pipe(prg).pipe(out);
   });
 }
 
-const access = util.promisify(fs.access);
-const close = util.promisify(fs.close);
+const idld = levelup(leveldown('./data/item_download_data.db'));
 
 export abstract class ItemDownloaderBase extends UIListElement {
   private owner: DownloadSetBase;
@@ -96,43 +97,66 @@ export abstract class ItemDownloaderBase extends UIListElement {
     this.saving = s;
     uiManager.markCurrentlyDownloadingInfoPanelDirty();
   }
-
   protected save_if_needed(url: string, fn: string): Promise<void> {
-    const _z = async () => {
-      let s = false;
+    return new Promise(resolve => {
       const fns = fn.scrubFilename();
 
       this.stage = 'Checking';
       const dest = `${uiManager.getDownloadBaseDestination()}/${this.getSavePath()}/${fns}`;
       this.destination = fns;
       this.fullDestination = dest;
-      try {
-        await access(dest);
-      } catch (err) {
-        this.stage = 'Saving';
-        this.setSaving(true);
-        uiManager.markCurrentlyDownloadingInfoPanelDirty();
-        try {
-          const r = await axios({
-            url,
-            method: 'GET',
-            responseType: 'stream'
-          });
-          await writeBinaryDataToFile(this, r);
-        } catch (err) {
-          appendLog(`Had error with ${url}`);
-        }
-        s = true;
-      }
-      this.stage = s ? 'Finished' : 'Skipped';
-      uiManager.markCurrentlyDownloadingInfoPanelDirty();
-      setTimeout(() => {
-        uiManager.removeCurrentlyDownloadingItem(this);
-      }, 5000);
+      idld
+        .get(fn)
+        .then(() => {
+          this.stage = 'Skipped';
+          uiManager.markCurrentlyDownloadingInfoPanelDirty();
+          setTimeout(() => {
+            uiManager.removeCurrentlyDownloadingItem(this);
+          }, 5000);
+          resolve();
+        })
+        .catch(() => {
+          try {
+            this.stage = 'HTTP';
+            uiManager.markCurrentlyDownloadingInfoPanelDirty();
+            axios({
+              url,
+              method: 'GET',
+              responseType: 'stream',
+              onDownloadProgress: (progressEvent: ProgressEvent) => {
+                const totalLength = progressEvent.lengthComputable
+                  ? progressEvent.total
+                  : progressEvent.target.getResponseHeader('content-length') ||
+                    progressEvent.target.getResponseHeader(
+                      'x-decompressed-content-length'
+                    );
+                if (totalLength !== null) {
+                  this.setDownloadProgress(
+                    Math.round((progressEvent.loaded * 100) / totalLength)
+                  );
+                }
+              }
+            }).then((r: AxiosResponse) => {
+              this.stage = 'Saving';
+              this.setSaving(true);
+              this.setDownloadProgress(0);
+              uiManager.markCurrentlyDownloadingInfoPanelDirty();
 
-      return;
-    };
-
-    return _z();
+              writeBinaryDataToFile(this, r).then(() => {
+                this.stage = 'Finished';
+                uiManager.markCurrentlyDownloadingInfoPanelDirty();
+                setTimeout(() => {
+                  uiManager.removeCurrentlyDownloadingItem(this);
+                }, 5000);
+                idld.put(fn, true);
+                resolve();
+              });
+            });
+          } catch (err) {
+            appendLog(`Had error with ${url}`);
+            resolve();
+          }
+        });
+    });
   }
 }
